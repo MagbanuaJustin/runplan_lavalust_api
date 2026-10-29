@@ -11,8 +11,8 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
  * `refresh_token_column`, and `refresh_token_key` from app/config/api.php so
  * schema configuration lives in one place.
  */
-class RefreshTokenModel extends Model {
-
+class RefreshTokenModel extends Model
+{
     protected $table        = 'refresh_tokens';
     protected $primary_key  = 'id';
     protected $timestamps   = false;
@@ -23,13 +23,15 @@ class RefreshTokenModel extends Model {
         parent::__construct();
 
         $table = config_item('refresh_token_table') ?: $this->table;
+
         if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $table) === 1) {
             $this->table = (string) $table;
         }
 
-        $col = config_item('refresh_token_column') ?: $this->token_column;
-        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $col) === 1) {
-            $this->token_column = (string) $col;
+        $column = config_item('refresh_token_column') ?: $this->token_column;
+
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $column) === 1) {
+            $this->token_column = (string) $column;
         }
     }
 
@@ -42,7 +44,11 @@ class RefreshTokenModel extends Model {
      */
     public function hash($token)
     {
-        return hash_hmac('sha256', (string) $token, (string) config_item('refresh_token_key'));
+        return hash_hmac(
+            'sha256',
+            (string) $token,
+            (string) config_item('refresh_token_key')
+        );
     }
 
     /**
@@ -56,11 +62,17 @@ class RefreshTokenModel extends Model {
         if ((string) $token === '') {
             return null;
         }
-        $row = $this->db->raw(
-            "SELECT id, user_id, expires_at, jti, revoked_at FROM {$this->table}
-              WHERE {$this->token_column} = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP LIMIT 1",
-            array($this->hash($token))
-        )->fetch(PDO::FETCH_ASSOC);
+
+        $now_utc = gmdate('Y-m-d H:i:s');
+
+        $row = $this->db->table($this->table)
+            ->select('id, user_id, expires_at, jti, revoked_at')
+            ->where($this->token_column, $this->hash($token))
+            ->where_null('revoked_at')
+            ->where('expires_at', '>', $now_utc)
+            ->limit(1)
+            ->get(PDO::FETCH_ASSOC);
+
         return $row ?: null;
     }
 
@@ -76,10 +88,10 @@ class RefreshTokenModel extends Model {
         if ((string) $token === '') {
             return;
         }
-        $this->db->raw(
-            "DELETE FROM {$this->table} WHERE {$this->token_column} = ?",
-            array($this->hash($token))
-        );
+
+        $this->db->table($this->table)
+            ->where($this->token_column, $this->hash($token))
+            ->delete();
     }
 
     /**
@@ -91,11 +103,9 @@ class RefreshTokenModel extends Model {
      */
     public function revoke_all_for_user($user_id)
     {
-        $stmt = $this->db->raw(
-            "DELETE FROM {$this->table} WHERE user_id = ?",
-            array((int) $user_id)
-        );
-        return $stmt ? (int) $stmt->rowCount() : 0;
+        return (int) $this->db->table($this->table)
+            ->where('user_id', (int) $user_id)
+            ->delete();
     }
 
     /**
@@ -105,7 +115,10 @@ class RefreshTokenModel extends Model {
      */
     public function purge_expired()
     {
-        $stmt = $this->db->raw("DELETE FROM {$this->table} WHERE expires_at < CURRENT_TIMESTAMP");
-        return $stmt ? (int) $stmt->rowCount() : 0;
+        $now_utc = gmdate('Y-m-d H:i:s');
+
+        return (int) $this->db->table($this->table)
+            ->where('expires_at', '<', $now_utc)
+            ->delete();
     }
 }

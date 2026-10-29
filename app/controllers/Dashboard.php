@@ -3,6 +3,8 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
 /**
  * Controller: Dashboard
+ * 
+ * Automatically generated via CLI.
  */
 class Dashboard extends Controller {
 

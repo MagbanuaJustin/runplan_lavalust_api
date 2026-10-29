@@ -6,20 +6,21 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
  *
  * Manual first-party running activities.
  *
- * Spec 5.5 / TC-10 / TC-15 data boundary: only first-party RunPlan records
- * (`source = 'manual'`) are eligible for analytics, plan adaptation, or
- * Anthropic AI prompts. Even while Strava remains disabled pending policy
- * review, every read path that feeds metrics or AI enforces ELIGIBLE_SOURCE.
  */
-class ActivityModel extends Model {
+class ActivityModel extends Model
+{
     protected $table = 'activities';
     protected $primary_key = 'id';
 
     const ELIGIBLE_SOURCE = 'manual';
 
     protected $fillable = [
-        'session_id', 'activity_date', 'distance_km',
-        'duration_seconds', 'effort', 'notes',
+        'session_id',
+        'activity_date',
+        'distance_km',
+        'duration_seconds',
+        'effort',
+        'notes',
     ];
 
     /**
@@ -32,20 +33,47 @@ class ActivityModel extends Model {
 
     public function for_user($user_id, array $filters = [])
     {
-        $sql  = 'SELECT * FROM activities WHERE user_id = ? AND source = ?';
-        $args = [(int) $user_id, self::ELIGIBLE_SOURCE];
+        $query = $this->db->table($this->table)
+            ->where('user_id', (int) $user_id)
+            ->where('source', self::ELIGIBLE_SOURCE);
 
-        if (!empty($filters['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $filters['from'])) {
-            $sql   .= ' AND activity_date >= ?';
-            $args[] = (string) $filters['from'];
-        }
-        if (!empty($filters['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $filters['to'])) {
-            $sql   .= ' AND activity_date <= ?';
-            $args[] = (string) $filters['to'];
+        if (
+            !empty($filters['from'])
+            && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $filters['from'])
+        ) {
+            $query->where(
+                'activity_date',
+                '>=',
+                (string) $filters['from']
+            );
         }
 
-        $sql .= ' ORDER BY activity_date DESC, id DESC';
-        $rows = $this->db->raw($sql, $args)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (
+            !empty($filters['to'])
+            && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $filters['to'])
+        ) {
+            $query->where(
+                'activity_date',
+                '<=',
+                (string) $filters['to']
+            );
+        }
+
+        $rows = $query->get_all(PDO::FETCH_ASSOC) ?: [];
+
+        // Keep the original order: newest date first, then highest ID first.
+        usort($rows, static function ($a, $b) {
+            $date_order = strcmp(
+                (string) $b['activity_date'],
+                (string) $a['activity_date']
+            );
+
+            if ($date_order !== 0) {
+                return $date_order;
+            }
+
+            return (int) $b['id'] <=> (int) $a['id'];
+        });
 
         return array_map([$this, 'with_pace'], $rows);
     }
@@ -58,8 +86,12 @@ class ActivityModel extends Model {
         $row['id']               = (int) $row['id'];
         $row['distance_km']      = $km;
         $row['duration_seconds'] = $sec;
-        $row['session_id']       = $row['session_id'] !== null ? (int) $row['session_id'] : null;
-        $row['effort']           = $row['effort'] !== null ? (int) $row['effort'] : null;
+        $row['session_id']       = $row['session_id'] !== null
+            ? (int) $row['session_id']
+            : null;
+        $row['effort']            = $row['effort'] !== null
+            ? (int) $row['effort']
+            : null;
 
         if ($km > 0 && $sec > 0) {
             $pace = (int) round($sec / $km);
@@ -69,6 +101,7 @@ class ActivityModel extends Model {
             $row['pace_seconds_per_km'] = null;
             $row['pace_label'] = null;
         }
+
         return $row;
     }
 
@@ -80,10 +113,14 @@ class ActivityModel extends Model {
 
         $date = (string) ($in['activity_date'] ?? '');
         $d = DateTime::createFromFormat('Y-m-d', $date);
+
         if (!$d || $d->format('Y-m-d') !== $date) {
             $errors['activity_date'] = 'Enter a valid date.';
         } else {
-            $max = (new DateTime('now', new DateTimeZone('UTC')))->modify('+1 day')->format('Y-m-d');
+            $max = (new DateTime('now', new DateTimeZone('UTC')))
+                ->modify('+1 day')
+                ->format('Y-m-d');
+
             if ($date > $max) {
                 $errors['activity_date'] = 'The date cannot be in the future.';
             } elseif ($date < '2000-01-01') {
@@ -94,6 +131,7 @@ class ActivityModel extends Model {
         }
 
         $km = $in['distance_km'] ?? null;
+
         if (!is_numeric($km) || (float) $km < 0.01 || (float) $km > 300) {
             $errors['distance_km'] = 'Distance must be between 0.01 and 300 km.';
         } else {
@@ -101,15 +139,17 @@ class ActivityModel extends Model {
         }
 
         $sec = $in['duration_seconds'] ?? null;
+
         if (!is_numeric($sec) || (int) $sec != $sec || (int) $sec < 1 || (int) $sec > 172800) {
             $errors['duration_seconds'] = 'Enter a duration between 1 second and 48 hours.';
         } else {
             $clean['duration_seconds'] = (int) $sec;
         }
 
-        // Plausibility: only when both numbers are valid
+        // Plausibility: only when both numbers are valid.
         if (isset($clean['distance_km'], $clean['duration_seconds'])) {
             $pace = $clean['duration_seconds'] / $clean['distance_km'];
+
             if ($pace < 120) {
                 $errors['duration_seconds'] = 'That pace is faster than 2:00 /km. Check the distance and time.';
             } elseif ($pace > 1500) {
@@ -118,15 +158,23 @@ class ActivityModel extends Model {
         }
 
         $effort = $in['effort'] ?? null;
+
         if ($effort === null || $effort === '') {
             $clean['effort'] = null;
-        } elseif (filter_var($effort, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 10]]) === false) {
+        } elseif (
+            filter_var(
+                $effort,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1, 'max_range' => 10]]
+            ) === false
+        ) {
             $errors['effort'] = 'Effort must be a whole number from 1 to 10.';
         } else {
             $clean['effort'] = (int) $effort;
         }
 
         $notes = $in['notes'] ?? null;
+
         if ($notes === null || trim((string) $notes) === '') {
             $clean['notes'] = null;
         } elseif (mb_strlen((string) $notes) > 1000) {
@@ -140,10 +188,11 @@ class ActivityModel extends Model {
 
     public function find_for_user($user_id, $id)
     {
-        $row = $this->db->raw(
-            'SELECT * FROM activities WHERE id = ? AND user_id = ? LIMIT 1',
-            [(int) $id, (int) $user_id]
-        )->fetch(PDO::FETCH_ASSOC);
+        $row = $this->db->table($this->table)
+            ->where('id', (int) $id)
+            ->where('user_id', (int) $user_id)
+            ->limit(1)
+            ->get(PDO::FETCH_ASSOC);
 
         return $row ? $this->with_pace($row) : null;
     }
@@ -161,47 +210,66 @@ class ActivityModel extends Model {
      */
     public function longest_recent_run_km($user_id, $days = 21, ?DateTimeImmutable $today = null)
     {
-        $ref    = $today ?: new DateTimeImmutable('today', new DateTimeZone('UTC'));
-        $cutoff = $ref->modify('-' . max(1, (int) $days) . ' days')->format('Y-m-d');
+        $ref = $today ?: new DateTimeImmutable('today', new DateTimeZone('UTC'));
+        $cutoff = $ref
+            ->modify('-' . max(1, (int) $days) . ' days')
+            ->format('Y-m-d');
 
-        $row = $this->db->raw(
-            'SELECT MAX(distance_km) AS d FROM activities
-              WHERE user_id = ? AND source = ? AND activity_date >= ?',
-            [(int) $user_id, self::ELIGIBLE_SOURCE, $cutoff]
-        )->fetch(PDO::FETCH_ASSOC);
+        $row = $this->db->table($this->table)
+            ->select_max('distance_km', 'd')
+            ->where('user_id', (int) $user_id)
+            ->where('source', self::ELIGIBLE_SOURCE)
+            ->where('activity_date', '>=', $cutoff)
+            ->get(PDO::FETCH_ASSOC);
 
         return ($row && $row['d'] !== null) ? (float) $row['d'] : null;
     }
 
-    // Returns the new activity, or null if the session was completed meanwhile
+    // Returns the new activity, or null if the session was completed meanwhile.
     public function create_for_user($user_id, array $clean, $session_id = null)
     {
-        $row = array_merge($clean, ['user_id' => (int) $user_id, 'source' => self::ELIGIBLE_SOURCE]);
+        $row = array_merge(
+            $clean,
+            [
+                'user_id' => (int) $user_id,
+                'source' => self::ELIGIBLE_SOURCE,
+            ]
+        );
+
         if ($session_id !== null) {
             $row['session_id'] = (int) $session_id;
         }
 
         $this->db->transaction();
+
         $this->db->table($this->table)->insert($row);
         $id = (int) $this->db->last_id();
 
         if ($session_id !== null) {
-            $done = $this->db->raw(
-                "UPDATE training_sessions SET status = 'completed', updated_at = CURRENT_TIMESTAMP
-                  WHERE id = ? AND user_id = ? AND status <> 'completed'",
-                [(int) $session_id, (int) $user_id]
-            );
-            if ($done->rowCount() === 0) {
+            $done = $this->db->table('training_sessions')
+                ->where('id', (int) $session_id)
+                ->where('user_id', (int) $user_id)
+                ->where('status', '<>', 'completed')
+                ->update([
+                    'status' => 'completed',
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                ]);
+
+            if ((int) $done === 0) {
                 $this->db->roll_back();
                 return null;
             }
-            // Cancel any pending reminder job for a session now completed
-            $this->db->raw(
-                "UPDATE notification_jobs SET status = 'cancelled'
-                  WHERE session_id = ? AND user_id = ? AND status = 'pending'",
-                [(int) $session_id, (int) $user_id]
-            );
+
+            // Cancel any pending reminder job for a session now completed.
+            $this->db->table('notification_jobs')
+                ->where('session_id', (int) $session_id)
+                ->where('user_id', (int) $user_id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'cancelled',
+                ]);
         }
+
         $this->db->commit();
 
         return $this->find_for_user($user_id, $id);
@@ -209,38 +277,49 @@ class ActivityModel extends Model {
 
     public function delete_for_user($user_id, $id)
     {
-        $found = $this->db->raw(
-            'SELECT session_id FROM activities WHERE id = ? AND user_id = ?',
-            [(int) $id, (int) $user_id]
-        )->fetch(PDO::FETCH_ASSOC);
+        $found = $this->db->table($this->table)
+            ->select('session_id')
+            ->where('id', (int) $id)
+            ->where('user_id', (int) $user_id)
+            ->get(PDO::FETCH_ASSOC);
+
         if (!$found) {
             return;
         }
 
         $this->db->transaction();
-        $this->db->raw('DELETE FROM activities WHERE id = ? AND user_id = ?', [(int) $id, (int) $user_id]);
+
+        $this->db->table($this->table)
+            ->where('id', (int) $id)
+            ->where('user_id', (int) $user_id)
+            ->delete();
+
         if ($found['session_id'] !== null) {
-            $this->db->raw(
-                "UPDATE training_sessions SET status = 'planned', updated_at = CURRENT_TIMESTAMP
-                  WHERE id = ? AND user_id = ? AND status = 'completed'",
-                [(int) $found['session_id'], (int) $user_id]
-            );
+            $this->db->table('training_sessions')
+                ->where('id', (int) $found['session_id'])
+                ->where('user_id', (int) $user_id)
+                ->where('status', 'completed')
+                ->update([
+                    'status' => 'planned',
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                ]);
         }
+
         $this->db->commit();
     }
 
     public function update_for_user($user_id, $id, array $clean)
     {
-        $this->db->raw(
-            'UPDATE activities
-                SET activity_date = ?, distance_km = ?, duration_seconds = ?,
-                    effort = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
-              WHERE id = ? AND user_id = ?',
-            [
-                $clean['activity_date'], $clean['distance_km'], $clean['duration_seconds'],
-                $clean['effort'], $clean['notes'], (int) $id, (int) $user_id,
-            ]
-        );
+        $this->db->table($this->table)
+            ->where('id', (int) $id)
+            ->where('user_id', (int) $user_id)
+            ->update([
+                'activity_date' => $clean['activity_date'],
+                'distance_km' => $clean['distance_km'],
+                'duration_seconds' => $clean['duration_seconds'],
+                'effort' => $clean['effort'],
+                'notes' => $clean['notes'],
+            ]);
     }
 
     public function linkable_session($user_id, $session_id)
@@ -248,12 +327,15 @@ class ActivityModel extends Model {
         if (!ctype_digit((string) $session_id)) {
             return null;
         }
-        $row = $this->db->raw(
-            "SELECT s.id, s.status FROM training_sessions s
-               JOIN training_plans p ON p.id = s.plan_id
-              WHERE s.id = ? AND s.user_id = ? AND p.status = 'active' LIMIT 1",
-            [(int) $session_id, (int) $user_id]
-        )->fetch(PDO::FETCH_ASSOC);
+
+        $row = $this->db->table('training_sessions s')
+            ->select('s.id, s.status')
+            ->join('training_plans p', 'p.id = s.plan_id')
+            ->where('s.id', (int) $session_id)
+            ->where('s.user_id', (int) $user_id)
+            ->where('p.status', 'active')
+            ->limit(1)
+            ->get(PDO::FETCH_ASSOC);
 
         return $row ?: null;
     }

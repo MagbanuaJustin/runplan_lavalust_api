@@ -16,7 +16,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing · ⚠️ built but deviates fro
 | ID | Requirement | Status | Gap |
 |---|---|---|---|
 | FR-01 | Register/login/logout, **password recovery**, Google sign-in, reCAPTCHA, profile | 🟡 | email/pw auth ✅, profile ✅. **Missing:** recovery, Google, reCAPTCHA, account deletion |
-| FR-02 | Personalised plan generation, Claude-assisted, backend validation, preview→approve | ⚠️ | Generator + draft/approve flow ✅ and validation is genuinely strict. **Missing:** Claude path (`ai_plan_requests` never written), preferred time-of-day not used in scheduling |
+| FR-02 | Personalised plan generation, Gemini-assisted, backend validation, preview→approve | ⚠️ | Generator + draft/approve flow ✅ and validation is genuinely strict. **Missing:** Gemini path (`ai_plan_requests` never written), preferred time-of-day not used in scheduling |
 | FR-03 | Activity logging, metrics, dashboard, AI feedback | 🟡 | CRUD + pace/consistency/dashboard ✅ (well done). **Missing:** AI feedback (`ai_feedback` never written), progress charts data shape |
 | FR-04 | Revise/reschedule/skip/regenerate future sessions, **validate**, version history, preserve completed | ⚠️ | reschedule/skip/rebuild + `plan_revisions` ✅. **Deviation:** rebuild applies immediately with no confirm step; `decision` never recorded |
 | FR-05 | 6 integrations, isolated server-side modules, status + error reporting | ❌ | no service layer exists at all |
@@ -25,7 +25,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing · ⚠️ built but deviates fro
 
 | # | Integration | Backend today | Tables ready | Frontend today |
 |---|---|---|---|---|
-| 1 | Anthropic Claude (plan draft **and** feedback) | none | `ai_plan_requests`, `ai_feedback` | none |
+| 1 | Google Gemini (plan draft **and** feedback) | none | `ai_plan_requests`, `ai_feedback` | none |
 | 2 | OpenWeatherMap | none | `weather_cache`, `settings` | none |
 | 3 | Google Calendar | none | `integration_accounts`, `calendar_event_mappings` | none |
 | 4 | Firebase Cloud Messaging | none | `notification_preferences`, `push_subscriptions`, `notification_jobs` | none |
@@ -91,7 +91,7 @@ Each phase is independently shippable and leaves the app working. `A`=API repo, 
 #### Phase 3 — Google Identity Services + Google reCAPTCHA *(§5.6, §5.7)*
 - A/F: Google ID token verification (`user_identities`, explicit linking, no email auto-link) + reCAPTCHA verification on public forms.
 
-#### Phase 4 — Anthropic Claude *(FR-02, FR-03, §5.1)*
+#### Phase 4 — Google Gemini *(FR-02, FR-03, §5.1)*
 - A/F: Structured AI plan proposals validated through `PlanModel::build()` with deterministic template fallback (`ai_plan_requests`) + coaching feedback (`ai_feedback`).
 
 #### Phase 5 — OpenWeatherMap Advisories *(§5.2)*

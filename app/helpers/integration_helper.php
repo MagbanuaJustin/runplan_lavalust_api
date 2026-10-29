@@ -39,7 +39,8 @@ if (!function_exists('integration_config')) {
 
 if (!function_exists('integration_value')) {
     /**
-     * One setting with a fallback, e.g. integration_value('anthropic', 'timeout', 25)
+     * Read one setting with a fallback, for example:
+     * integration_value('gemini', 'timeout', 25)
      *
      * @param string $provider
      * @param string $key
@@ -70,7 +71,7 @@ if (!function_exists('integration_credential_present')) {
         }
 
         $required = array(
-            'anthropic'       => array('api_key'),
+            'gemini'          => array('api_key'),
             'openweathermap'  => array('api_key'),
             'google_calendar' => array('client_id', 'client_secret', 'redirect_uri', 'token_aad'),
             'google_identity' => array('client_id'),
@@ -133,27 +134,28 @@ if (!function_exists('integration_public_config')) {
      * The only shape of this config that may reach a browser: non-secret
      * booleans and public keys, used by GET /api/integrations.
      *
-     * Never add a *secret, *private_key, api_key or credential_json here.
+     * Never add a secret, private key, API key or credential JSON here.
      *
      * @return array
      */
     function integration_public_config()
     {
         return array(
-            'anthropic' => array(
-                'ready'   => integration_ready('anthropic'),
-                'enabled' => (bool) filter_var(
-                    integration_value('anthropic', 'enabled', false),
-                    FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE
+            'gemini' => array(
+                'ready'      => integration_ready('gemini'),
+                'enabled'    => (bool) filter_var(
+                    integration_value('gemini', 'enabled', false),
+                    FILTER_VALIDATE_BOOLEAN,
+                    FILTER_NULL_ON_FAILURE
                 ),
-                'configured' => integration_credential_present('anthropic'),
-                'model'   => integration_value('anthropic', 'model'),
+                'configured' => integration_credential_present('gemini'),
+                'model'      => integration_value('gemini', 'model'),
             ),
             'weather' => array(
-                'ready'          => integration_ready('openweathermap'),
-                'configured'     => integration_credential_present('openweathermap'),
-                'product'        => integration_value('openweathermap', 'product'),
-                'forecast_days'  => (int) integration_value('openweathermap', 'forecast_days', 0),
+                'ready'         => integration_ready('openweathermap'),
+                'configured'    => integration_credential_present('openweathermap'),
+                'product'       => integration_value('openweathermap', 'product'),
+                'forecast_days' => (int) integration_value('openweathermap', 'forecast_days', 0),
             ),
             'google_calendar' => array(
                 'ready'      => integration_ready('google_calendar'),
@@ -172,10 +174,10 @@ if (!function_exists('integration_public_config')) {
                 'client_id'  => integration_value('google_identity', 'client_id'),
             ),
             'recaptcha' => array(
-                'ready'      => integration_ready('recaptcha'),
-                'configured' => integration_credential_present('recaptcha'),
-                'version'    => integration_value('recaptcha', 'version'),
-                'site_key'   => integration_value('recaptcha', 'site_key'),
+                'ready'       => integration_ready('recaptcha'),
+                'configured'  => integration_credential_present('recaptcha'),
+                'version'     => integration_value('recaptcha', 'version'),
+                'site_key'    => integration_value('recaptcha', 'site_key'),
                 'required_on' => integration_value('recaptcha', 'require_on', array()),
             ),
             'strava' => array(

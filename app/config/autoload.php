@@ -72,8 +72,16 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 |
 |	$autoload['libraries'] = array('database', 'email', 'session');
 */
-$autoload['libraries'] = array();
+lava_instance()->config->load('integrations');
+require_once APP_DIR . 'helpers/integration_helper.php';
 
+$autoload['libraries'] = array(
+    'TokenVault',
+    'GoogleCalendarService',
+    'GoogleCalendarEventService',
+    'OAuthState',
+    'GeminiService'
+);
 /*
 | -------------------------------------------------------------------
 |  Auto-load Helper Files
@@ -92,8 +100,10 @@ $autoload['helpers'] = array('integration');
 |
 |	$autoload['models'] = array('model1_model', 'model2_model')
 */
-$autoload['models'] = array();
-
+$autoload['models'] = array(
+    'CalendarLinkModel',
+    'AiCoachingModel'
+);
 /*
 | -------------------------------------------------------------------
 |  Auto-load Config files

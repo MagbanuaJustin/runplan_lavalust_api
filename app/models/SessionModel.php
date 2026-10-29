@@ -1,33 +1,30 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Model: SessionModel
- *
- * Dedicated data-access boundary for `training_sessions` on a runner's active
- * plan: lookup, overdue missed-session marking, rescheduling, and status
- * transitions (`planned` <-> `skipped`). Plan-version audit snapshots remain
- * coordinated through PlanModel so every schedule mutation writes to
- * `plan_revisions`.
- */
-class SessionModel extends Model {
-
+class SessionModel extends Model
+{
     protected $table       = 'training_sessions';
     protected $primary_key = 'id';
     protected $timestamps  = true;
 
     public function find_for_user($user_id, $session_id)
     {
-        $row = $this->db->raw(
-            "SELECT s.id, s.plan_id, s.scheduled_date, s.type,
-                    s.planned_distance_km, s.planned_duration_seconds,
-                    s.status, s.notes
-               FROM training_sessions s
-               JOIN training_plans p ON p.id = s.plan_id
-              WHERE s.id = ? AND s.user_id = ? AND p.status = 'active'
-              LIMIT 1",
-            [(int) $session_id, (int) $user_id]
-        )->fetch(PDO::FETCH_ASSOC);
+        $row = $this->db->table($this->table)
+            ->select(
+                'training_sessions.id, training_sessions.plan_id, training_sessions.scheduled_date, ' .
+                'training_sessions.planned_start_time, training_sessions.type, ' .
+                'training_sessions.planned_distance_km, training_sessions.planned_duration_seconds, ' .
+                'training_sessions.status, training_sessions.skip_reason, training_sessions.notes'
+            )
+            ->join(
+                'training_plans',
+                'training_plans.id = training_sessions.plan_id'
+            )
+            ->where('training_sessions.id', (int) $session_id)
+            ->where('training_sessions.user_id', (int) $user_id)
+            ->where('training_plans.status', 'active')
+            ->limit(1)
+            ->get(PDO::FETCH_ASSOC);
 
         if (!$row) {
             return null;
@@ -37,35 +34,54 @@ class SessionModel extends Model {
             'id'                       => (int) $row['id'],
             'plan_id'                  => (int) $row['plan_id'],
             'scheduled_date'           => $row['scheduled_date'],
+            'planned_start_time'       => $row['planned_start_time'] ?? null,
             'type'                     => $row['type'],
-            'planned_distance_km'      => $row['planned_distance_km'] !== null ? (float) $row['planned_distance_km'] : null,
-            'planned_duration_seconds' => $row['planned_duration_seconds'] !== null ? (int) $row['planned_duration_seconds'] : null,
+            'planned_distance_km'      => $row['planned_distance_km'] !== null
+                ? (float) $row['planned_distance_km']
+                : null,
+            'planned_duration_seconds' => $row['planned_duration_seconds'] !== null
+                ? (int) $row['planned_duration_seconds']
+                : null,
             'status'                   => $row['status'],
+            'skip_reason'              => $row['skip_reason'] ?? null,
             'notes'                    => $row['notes'],
         ];
     }
 
     /**
      * Marks planned sessions older than yesterday (UTC) on the active plan as
-     * `missed`. Uses portable ISO-date comparison so MySQL and SQLite tests
-     * behave identically.
+     * `missed`. Uses ISO-date comparison so MySQL and SQLite behave identically.
      */
     public function mark_missed_for_user($user_id, ?DateTimeImmutable $today = null)
     {
         $ref    = $today ?: new DateTimeImmutable('today', new DateTimeZone('UTC'));
         $cutoff = $ref->modify('-1 day')->format('Y-m-d');
+        $uid    = (int) $user_id;
 
-        $this->db->raw(
-            "UPDATE training_sessions
-                SET status = 'missed', updated_at = CURRENT_TIMESTAMP
-              WHERE user_id = ?
-                AND status = 'planned'
-                AND scheduled_date < ?
-                AND plan_id IN (
-                    SELECT id FROM training_plans WHERE user_id = ? AND status = 'active'
-                )",
-            [(int) $user_id, $cutoff, (int) $user_id]
+        $active_plans = $this->db->table('training_plans')
+            ->select('id')
+            ->where('user_id', $uid)
+            ->where('status', 'active')
+            ->get_all(PDO::FETCH_ASSOC);
+
+        $active_plan_ids = array_map(
+            'intval',
+            array_column($active_plans ?: array(), 'id')
         );
+
+        if (empty($active_plan_ids)) {
+            return;
+        }
+
+        $this->db->table($this->table)
+            ->where('user_id', $uid)
+            ->where('status', 'planned')
+            ->where('scheduled_date', '<', $cutoff)
+            ->in('plan_id', $active_plan_ids)
+            ->update([
+                'status'     => 'missed',
+                'updated_at' => gmdate('Y-m-d H:i:s'),
+            ]);
     }
 
     /**
@@ -78,19 +94,30 @@ class SessionModel extends Model {
     {
         $lava = lava_instance();
         $lava->call->model('PlanModel');
-        return $lava->PlanModel->reschedule_session((int) $user_id, (int) $session_id, (string) $new_date);
+
+        return $lava->PlanModel->reschedule_session(
+            (int) $user_id,
+            (int) $session_id,
+            (string) $new_date
+        );
     }
 
     /**
-     * Updates session status (`planned` or `skipped`). Completed sessions are
-     * protected and return `false`.
+     * Updates session status (`planned` or `skipped`) with optional `skip_reason`.
+     * Completed sessions are protected and return `false`.
      *
      * @return array|false|null
      */
-    public function set_status($user_id, $session_id, $status)
+    public function set_status($user_id, $session_id, $status, $skip_reason = null)
     {
         $lava = lava_instance();
         $lava->call->model('PlanModel');
-        return $lava->PlanModel->set_session_status((int) $user_id, (int) $session_id, (string) $status);
+
+        return $lava->PlanModel->set_session_status(
+            (int) $user_id,
+            (int) $session_id,
+            (string) $status,
+            $skip_reason
+        );
     }
 }

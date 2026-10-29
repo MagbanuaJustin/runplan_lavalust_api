@@ -5,7 +5,7 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
  * Controller: Sessions
  *
  * Updates a training session on the runner's active plan (either moving its
- * date or toggling `planned` / `skipped` status).
+ * date or toggling `planned` / `skipped` status with an optional `skip_reason`).
  */
 class Sessions extends Controller {
 
@@ -65,7 +65,15 @@ class Sessions extends Controller {
             ], 422);
         }
 
-        $result = $this->SessionModel->set_status($user_id, $id, $status);
+        $skip_reason = $input['skip_reason'] ?? null;
+        if ($skip_reason !== null && (!is_scalar($skip_reason) || mb_strlen(trim((string) $skip_reason)) > 255)) {
+            $this->api->respond([
+                'error'  => 'Validation failed',
+                'fields' => ['skip_reason' => 'Keep the skip reason under 255 characters.'],
+            ], 422);
+        }
+
+        $result = $this->SessionModel->set_status($user_id, $id, $status, $skip_reason);
         if ($result === null) {
             $this->api->respond_error('Session not found.', 404);
         }

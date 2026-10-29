@@ -26,20 +26,22 @@ $config['integrations'] = array(
 
     /*
     | -----------------------------------------------------------------
-    | Anthropic Claude - plan drafting + training feedback (spec 5.1)
+    | Google Gemini - plan drafting + training feedback
     | -----------------------------------------------------------------
-    | Requests are capped on purpose: this is a project key, and the spec
-    | asks for a monthly ceiling so testing cannot silently burn credits.
+    | Requests are capped so development use stays within a predictable
+    | limit. The API key must remain in the backend environment.
     */
-    'anthropic' => array(
-        'enabled'          => env('ANTHROPIC_ENABLED', 'false') === 'true',
-        'api_key'          => env('ANTHROPIC_API_KEY'),
-        'model'            => env('ANTHROPIC_MODEL', 'claude-sonnet-4-5'),
-        'base_uri'         => env('ANTHROPIC_BASE_URI', 'https://api.anthropic.com'),
-        'api_version'      => '2023-06-01',
-        'timeout'          => (int) env('ANTHROPIC_TIMEOUT', 25),
-        'max_tokens'       => (int) env('ANTHROPIC_MAX_TOKENS', 3000),
-        'monthly_call_cap' => (int) env('ANTHROPIC_MONTHLY_CALL_CAP', 500),
+    'gemini' => array(
+        'enabled'          => env('GEMINI_ENABLED', 'false') === 'true',
+        'api_key'          => env('GEMINI_API_KEY'),
+        'model'            => env('GEMINI_MODEL', 'gemini-3.8-flash'),
+        'base_uri' => env(
+           'GEMINI_BASE_URI',
+           'https://generativelanguage.googleapis.com/v1beta'
+         ),
+        'timeout'          => (int) env('GEMINI_TIMEOUT', 25),
+        'max_tokens'       => (int) env('GEMINI_MAX_TOKENS', 3000),
+        'monthly_call_cap' => (int) env('GEMINI_MONTHLY_CALL_CAP', 500),
         // Drafted plans are always re-validated by PlanModel::build() rules.
         'plan_schema_version' => '1',
     ),
@@ -81,6 +83,11 @@ $config['integrations'] = array(
         'token_aad'     => env('GCAL_TOKEN_AAD'),   // 32-byte hex key used to encrypt refresh tokens at rest
         'timeout'       => (int) env('GCAL_TIMEOUT', 15),
         'event_length_minutes' => (int) env('GCAL_EVENT_MINUTES', 60),
+        // Where the browser lands after Google's consent screen. The SPA origin,
+        // not the API: the callback stores the tokens, then redirects here with
+        // ?calendar=connected|denied|...
+        'return_url'    => env('GCAL_RETURN_URL', 'http://localhost:5173/account'),
+        'timezone' => env('GCAL_TIMEZONE', 'Asia/Manila'),
     ),
 
     /*
@@ -151,15 +158,4 @@ $config['integrations'] = array(
         ),
         'require_on'  => array('register', 'forgot_password'),
     ),
-
-    /*
-    | -----------------------------------------------------------------
-    | Strava - intentionally absent
-    | -----------------------------------------------------------------
-    | Spec 5.5 gates this integration on the current API Agreement/Policy
-    | (effective 2026-06-01), which restricts API data and anything derived
-    | from it for AI/ML and analytics use. Until that review is resolved the
-    | connector is not built, and there is no code path that can feed a
-    | Strava value into Anthropic or the dashboard metrics.
-    */
 );

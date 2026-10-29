@@ -16,7 +16,7 @@ class Create_users_table {
             return;
         }
 
-                $this->_lava->dbforge
+            $this->_lava->dbforge
             ->add_field([
                 'id' => [
                     'type'           => 'INT',

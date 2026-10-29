@@ -3,6 +3,8 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
 /**
  * Controller: Activities
+ * 
+ * Automatically generated via CLI.
  */
 class Activities extends Controller {
 
